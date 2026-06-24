@@ -1,0 +1,17 @@
+pycache/
+.ipynb_checkpoints/
+
+wandb/
+
+models/
+checkpoints/
+
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+.env
+
+.csv
+!submissions/.csv
