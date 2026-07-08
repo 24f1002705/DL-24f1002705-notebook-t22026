@@ -1,10 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[ ]:
-
-
-# %% [code] {"execution":{"iopub.status.busy":"2026-06-29T19:19:18.272840Z","iopub.execute_input":"2026-06-29T19:19:18.273280Z","iopub.status.idle":"2026-06-29T20:10:07.347855Z","shell.execute_reply.started":"2026-06-29T19:19:18.273250Z","shell.execute_reply":"2026-06-29T20:10:07.347192Z"},"jupyter":{"outputs_hidden":false}}
 # This Python 3 environment comes with many helpful analytics libraries installed
 # It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
 # For example, here's several helpful packages to load
@@ -34,8 +27,6 @@ import random
 
 import numpy as np
 import pandas as pd
-
-from sklearn.model_selection import train_test_split
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -112,7 +103,7 @@ def map_at_3(y_true, y_pred):
                 if pred[j] == true:
                     score += 1/(j+1)
                     break
-
+                
     return score/len(y_true)
 
 # ____________________________________________________________________________________________________
@@ -122,15 +113,15 @@ def expand_dataset(df):
     samples = []
 
     for _, row in df.iterrows():
-
+        
         for option in ["A","B","C","D","E"]:
             samples.append({
                 'prompt': row['prompt'],
 
                 'option': row[option],
-
+                
                 "label": 1 if option == row["answer"] else 0,
-
+    
                 "question_id": row["id"]
             })
 
@@ -154,7 +145,7 @@ class MCQDataset(Dataset):
             self.prompts[idx],
             self.options[idx],
             truncation=True,
-            max_length=MAX_LENGTH
+            max_length=256
         )
 
         return {
@@ -172,7 +163,6 @@ class MCQDataset(Dataset):
 # takes in a dataframe and returns dataloader for training
 def process_data(dataframe, tokenizer, shuffle):
     expanded_df = expand_dataset(dataframe)
-    print(expanded_df["label"].value_counts())
     data_object = MCQDataset(expanded_df, tokenizer)
 
     # data collator
@@ -209,7 +199,7 @@ def train_model(
     best_accuracy = 0
 
     for epoch in range(epochs):
-
+        
         # Training - put model into training mode
         model.train()
 
@@ -229,7 +219,7 @@ def train_model(
                 attention_mask = attention_mask,
                 labels=labels
             )
-
+            
             loss = outputs.loss
             loss.backward()
             optimizer.step()
@@ -240,11 +230,11 @@ def train_model(
 
         # Evaluation
         model.eval()
-
+        
         val_loss = 0
 
         correct = 0
-
+    
         total = 0
 
         with torch.no_grad():
@@ -254,7 +244,7 @@ def train_model(
                 attention_mask = batch["attention_mask"].to(device)
                 # to convert them to floats32 for single precision calculations
                 labels = batch["labels"].long().to(device)
-
+    
                 outputs = model(
                     input_ids = input_ids,
                     attention_mask = attention_mask,
@@ -262,12 +252,12 @@ def train_model(
                 )
 
                 val_loss += outputs.loss.item()
-
+                
                 predictions = torch.argmax(
                     outputs.logits,
                     dim=1
                 )
-
+                
                 correct += (predictions == labels).sum().item()
 
                 total += labels.size(0)
@@ -281,67 +271,67 @@ def train_model(
         ##################################
         if val_loss < lowest_val_loss:
             best_accuracy = accuracy
-
+            
             lowest_val_loss = val_loss
-
+    
             model.save_pretrained(save_dir)
-
+    
             tokenizer.save_pretrained(save_dir)
-
+    
             artifact = wandb.Artifact(
-
+    
                 save_dir,
-
+    
                 type="model"
-
+    
             )
-
+    
             artifact.add_dir(save_dir)
-
+    
             wandb.log_artifact(artifact)
 
-
+        
          ##################################
         # W&B Logging
         ##################################
-
+    
         wandb.log({
-
+    
             "epoch": epoch + 1,
-
+    
             "train_loss": train_loss,
-
+    
             "validation_loss": val_loss,
-
+    
             "validation_accuracy": accuracy,
-
+    
             "learning_rate": scheduler.get_last_lr()[0],
-
+    
             "lowest validation loss": lowest_val_loss
-
+    
         })
-
+    
         ##################################
         # Console
         ##################################
-
+    
         print(
-
+    
             f"Epoch {epoch+1}/{epochs}"
-
+    
             f" | Train Loss: {train_loss:.4f}"
-
+    
             f" | Val Loss: {val_loss:.4f}"
-
-            f" | Accuracy: {accuracy:.4f}"
-
+    
+            f" | Best Accuracy: {best_accuracy:.4f}"
+    
         )
-
+    
     print(f"\nLowest Validation Loss: {lowest_val_loss:.4f}")
 
     return {
         'loss': lowest_val_loss,
-        'accuracy': best_accuracy,
+        'accuracy': accuracy,
         'checkpoint': save_dir
     }
 
@@ -355,7 +345,7 @@ def clear_data(model, optimizer, scheduler):
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
         gc.collect()
-
+    
     except Exception as e:
         return("could not clean up model, optimizer and scheduler", e)
 
@@ -367,7 +357,7 @@ def upload_models():
             handle=f"siddharthavarma12/deberta-v3-base/fold{fold}-stage1",
             local_model_dir=f"best_model_fold{fold}_stage1"
         )
-
+    
         kagglehub.model_upload(
             handle=f"siddharthavarma12/deberta-v3-base/fold{fold}-stage2",
             local_model_dir=f"best_model_fold{fold}_stage2"
@@ -376,8 +366,10 @@ def upload_models():
 # ____________________________________________________________________________________________________
 # ____________________________________________________________________________________________________
 # ____________________________________________________________________________________________________
+def main():
+    df = pd.read_csv("/kaggle/input/competitions/smart-mcq-solver-challenge/train.csv")
 
-'''    kf = StratifiedKFold(
+    kf = StratifiedKFold(
         n_splits=FOLDS,
         shuffle=True,
         random_state=SEED
@@ -387,226 +379,140 @@ def upload_models():
         kf.split(df, df['answer']),
         start=1
     ):
-        print(f"\n========== Fold {fold} ==========\n")'''
+        print(f"\n========== Fold {fold} ==========\n")
 
-'''    train_df = df.iloc[train_idx].reset_index(drop=True)
-    val_df = df.iloc[val_idx].reset_index(drop=True)
-    print(len(train_df), len(val_df))
-    print(train_df["answer"].value_counts())
-    print(val_df["answer"].value_counts())'''
+        train_df = df.iloc[train_idx].reset_index(drop=True)
+        val_df = df.iloc[val_idx].reset_index(drop=True)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        model = AutoModelForSequenceClassification.from_pretrained(
+            MODEL_NAME,
+            num_labels=2,
+            dtype=torch.float32
+        )
 
-def main():
-    fold=1
-    df = pd.read_csv("/kaggle/input/competitions/smart-mcq-solver-challenge/train.csv")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        MODEL_NAME,
-        num_labels=2,
-        dtype=torch.float32
-    )
+        model = model.to(device)
 
-    model = model.to(device)
+        train_loader = process_data(
+            train_df,
+            tokenizer,
+            True
+        )
 
-    train_df, val_df = train_test_split(
-        df,
-        test_size=0.2,
-        stratify=df['answer'],
-        random_state=42
-    )
+        val_loader = process_data(
+            val_df,
+            tokenizer,
+            False
+        )
 
-    train_loader = process_data(
-        train_df,
-        tokenizer,
-        True
-    )
+        # Stage - 1 
+        # Setup
+        # optimizer
+        optimizer1 = AdamW(
+            model.parameters(),
+            lr=2e-5,
+            weight_decay=0.01
+        )
 
-    val_loader = process_data(
-        val_df,
-        tokenizer,
-        False
-    )
+        # scheduler
+        scheduler1 = get_linear_schedule_with_warmup(
+            optimizer1,
+            num_warmup_steps=int(0.1 * (len(train_loader) * STAGE1_EPOCHS)),
+            num_training_steps=(len(train_loader) * STAGE1_EPOCHS)
+        )
 
-    # Stage - 1 
-    # Setup
-    # optimizer
-    optimizer1 = AdamW(
-        model.parameters(),
-        lr=2e-5,
-        weight_decay=0.01
-    )
+        wandb.init(
 
-    print(optimizer1.param_groups[0]["lr"])
+            project="24f1002705-DLGenAI-t12026",
+        
+            name=f"deberta-v3-base-fold{fold}_stage1",
+        
+            config={
+        
+                "model": MODEL_NAME,
+                "epochs": STAGE1_EPOCHS,
+                "batch_size": 16,
+                "learning_rate": 2e-5,
+                "max_length": MAX_LENGTH,
+                "optimizer": "AdamW",
+                "scheduler": "Linear Warmup"
+        
+            }
+        
+        )
 
-    total_steps = len(train_loader) * STAGE1_EPOCHS
+        # trainer
+        train_model(
+            model,
+            tokenizer,
+            train_loader,
+            val_loader,
+            optimizer1,
+            scheduler1,
+            STAGE1_EPOCHS,
+            f"best_model_fold{fold}_stage1"
+        )
 
-    # scheduler
-    scheduler1 = get_linear_schedule_with_warmup(
-        optimizer1,
-        num_warmup_steps=int(0.1 * (total_steps)),
-        num_training_steps=(total_steps)
-    )
+        wandb.finish()
 
-    print(total_steps)
-    print(len(train_loader))
-    print(STAGE1_EPOCHS)
+        # interstage clean up
+        clear_data(model, optimizer1, scheduler1)
+            
 
-    wandb.init(
+        # Stage - 2
+        # setup
+        # import model
+        model = AutoModelForSequenceClassification.from_pretrained(
+            f"best_model_fold{fold}_stage1"
+        )
 
-        project="24f1002705-DLGenAI-t12026",
+        model = model.to(device)
 
-        name=f"deberta-v3-base-fold{fold}_stage1",
+        optimizer2 = AdamW(
+            model.parameters(),
+            lr=5e-6,
+            weight_decay=0.01
+        )
 
-        config={
+        scheduler2 = get_linear_schedule_with_warmup(
+            optimizer2,
+            num_warmup_steps=int(0.1 * (len(train_loader) * STAGE2_EPOCHS)),
+            num_training_steps=(len(train_loader) * STAGE2_EPOCHS)
+        )
+        
+        wandb.init(
 
-            "model": MODEL_NAME,
-            "epochs": STAGE1_EPOCHS,
-            "batch_size": 16,
-            "learning_rate": 2e-5,
-            "max_length": MAX_LENGTH,
-            "optimizer": "AdamW",
-            "scheduler": "Linear Warmup"
+            project="24f1002705-DLGenAI-t12026",
+        
+            name=f"deberta-v3-base-fold{fold}_stage2",
+        
+            config={
+        
+                "model": MODEL_NAME,
+                "epochs": STAGE2_EPOCHS,
+                "batch_size": 16,
+                "learning_rate": 5e-6,
+                "max_length": MAX_LENGTH,
+                "optimizer": "AdamW",
+                "scheduler": "Linear Warmup"
+        
+            }
+        
+        )
+        
+        train_model(
+            model,
+            tokenizer,
+            train_loader,
+            val_loader,
+            optimizer2,
+            scheduler2,
+            STAGE2_EPOCHS,
+            f"best_model_fold{fold}_stage2"
+        )
+        wandb.finish()
 
-        }
-
-    )
-
-    # trainer
-    train_model(
-        model,
-        tokenizer,
-        train_loader,
-        val_loader,
-        optimizer1,
-        scheduler1,
-        STAGE1_EPOCHS,
-        f"best_model_fold{fold}_stage1"
-    )
-
-    wandb.finish()
-
-    # interstage clean up
-    clear_data(model, optimizer1, scheduler1)
-
-
-    # Stage - 2
-    # setup
-    # import model
-    model = AutoModelForSequenceClassification.from_pretrained(
-        f"best_model_fold{fold}_stage1"
-    )
-
-    model = model.to(device)
-
-    optimizer2 = AdamW(
-        model.parameters(),
-        lr=5e-6,
-        weight_decay=0.01
-    )
-
-    scheduler2 = get_linear_schedule_with_warmup(
-        optimizer2,
-        num_warmup_steps=int(0.1 * (len(train_loader) * STAGE2_EPOCHS)),
-        num_training_steps=(len(train_loader) * STAGE2_EPOCHS)
-    )
-
-    wandb.init(
-
-        project="24f1002705-DLGenAI-t12026",
-
-        name=f"deberta-v3-base-fold{fold}_stage2",
-
-        config={
-
-            "model": MODEL_NAME,
-            "epochs": STAGE2_EPOCHS,
-            "batch_size": 16,
-            "learning_rate": 5e-6,
-            "max_length": MAX_LENGTH,
-            "optimizer": "AdamW",
-            "scheduler": "Linear Warmup"
-
-        }
-
-    )
-
-    train_model(
-        model,
-        tokenizer,
-        train_loader,
-        val_loader,
-        optimizer2,
-        scheduler2,
-        STAGE2_EPOCHS,
-        f"best_model_fold{fold}_stage2"
-    )
-    wandb.finish()
-
-    clear_data(model, optimizer2, scheduler2)
+        clear_data(model, optimizer2, scheduler2)
 
 if __name__ == "__main__":
 
     main()
-
-#upload_models()
-
-# %% [code] {"execution":{"iopub.status.busy":"2026-06-29T20:12:38.155255Z","iopub.execute_input":"2026-06-29T20:12:38.155902Z","iopub.status.idle":"2026-06-29T20:12:38.162492Z","shell.execute_reply.started":"2026-06-29T20:12:38.155868Z","shell.execute_reply":"2026-06-29T20:12:38.161541Z"}}
-import torch
-import torch.nn.functional as F
-
-OPTIONS = ["A", "B", "C", "D", "E"]
-
-def predict_mcq(model, tokenizer, row, device):
-
-    model.eval()
-
-    scores = []
-
-    with torch.no_grad():
-
-        for option in OPTIONS:
-
-            encoding = tokenizer(
-
-                row["prompt"],
-                row[option],
-
-                truncation=True,
-                padding="max_length",
-                max_length=256,
-
-                return_tensors="pt"
-
-            )
-
-            input_ids = encoding["input_ids"].to(device)
-            attention_mask = encoding["attention_mask"].to(device)
-
-            outputs = model(
-
-                input_ids=input_ids,
-                attention_mask=attention_mask
-
-            )
-
-            probabilities = F.softmax(outputs.logits, dim=1)
-
-            score = probabilities[0,1].item()
-
-            scores.append(score)
-
-    ranking = [
-
-        option
-
-        for _, option in sorted(
-
-            zip(scores, OPTIONS),
-
-            reverse=True
-
-        )
-
-    ]
-
-    return ranking, scores
-
